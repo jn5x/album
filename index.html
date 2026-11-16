@@ -82,6 +82,12 @@ html,body{margin:0;height:100%;background:var(--grass);overflow:hidden;font-fami
 .lv{display:flex;gap:4px}.lv i{width:16px;height:9px;border-radius:4px;border:2px solid var(--ink);background:#fff}.lv i.on{background:#3fbf5a}
 .up .btn{min-width:96px}
 #reset{margin:14px auto 4px;display:block;font-size:14px;height:40px}
+.bk{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+.bk .btn{font-size:14px;height:40px}
+.rq{margin-top:14px;padding:10px;border:3px solid var(--ink);border-radius:14px;background:#fff;text-align:center}
+.rq p{margin:0 0 8px;font-size:15px}
+.rq .btn{font-size:15px;height:42px}
+.note{text-align:center;margin:12px 0 0;font-weight:600;color:#c62828}
 /* card */
 #card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.6);opacity:0;z-index:15;pointer-events:none;transition:transform .25s cubic-bezier(.3,1.6,.6,1),opacity .2s;width:min(300px,86vw)}
 #card.on{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto}
@@ -130,6 +136,7 @@ html,body{margin:0;height:100%;background:var(--grass);overflow:hidden;font-fami
 <div class="ov" id="shop"><div class="panel">
   <div class="ph"><h2>Obchod s vylepšeniami<small>Míňaj peniaze z húb</small></h2><button class="btn" id="sX" aria-label="Zavrieť">✕</button></div>
   <div class="list" id="sL"></div>
+  <input type="file" id="resF" accept=".json,application/json" hidden>
 </div></div>
 
 <div class="ov" id="start"><div class="panel">
@@ -811,14 +818,51 @@ $('bX').onclick=()=>$('big').classList.remove('on');$('big').addEventListener('c
 $('cnt').addEventListener('click',()=>{if(started)openAlbum()});
 
 /* ---------- obchod ---------- */
-let resetArm=false;
-function openShop(){initAudio();SFX.pop();resetArm=false;renderShop();$('shop').classList.add('on')}
+let resetArm=false,restoreCand=null,shopNote='';
+function openShop(){initAudio();SFX.pop();resetArm=false;restoreCand=null;shopNote='';renderShop();$('shop').classList.add('on')}
 function renderShop(){
+  let rq='';
+  if(restoreCand){const o=restoreCand,d=o.data,n=(Array.isArray(d.own)?d.own.length:0),m=Math.max(0,Math.floor(+d.money||0));let ds='';try{ds=new Date(o.date).toLocaleString('sk-SK',{day:'numeric',month:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){}
+    rq='<div class="rq"><p>Záloha'+(ds?' z '+ds:'')+':<br><b>'+n+' postavičiek, '+m.toLocaleString('sk-SK')+' €</b><br>Nahradiť ňou súčasný postup?</p><button class="btn g" id="resOk">Áno, nahradiť</button> <button class="btn" id="resNo">Zrušiť</button></div>'}
   $('sL').innerHTML=UP.map(u=>{const l=S.up[u.k],max=l>=3,cost=max?0:u.cost[l];return'<div class="up"><div class="t"><b>'+u.n+'</b><p>'+u.d+'</p><div class="lv">'+[0,1,2].map(i=>'<i class="'+(i<l?'on':'')+'"></i>').join('')+'</div></div><button class="btn '+(max?'':'y')+'" data-k="'+u.k+'" '+(max||S.money<cost?'disabled':'')+'>'+(max?'Max':cost.toLocaleString('sk-SK')+' €')+'</button></div>'}).join('')+
+  rq+(shopNote?'<p class="note">'+shopNote+'</p>':'')+
+  '<div class="bk"><button class="btn" id="bak">Uložiť zálohu</button><button class="btn" id="res">Obnoviť zo zálohy</button></div>'+
   '<button class="btn" id="reset">'+(resetArm?'Naozaj zmazať všetko? Ťukni znova':'Nová hra od začiatku')+'</button>';
 }
+/* ---------- záloha do súboru ---------- */
+const BAK_APP='valbume_lego';
+function readBackup(txt){try{const o=JSON.parse(txt);if(o&&o.app===BAK_APP&&o.data&&typeof o.data==='object'&&Array.isArray(o.data.own)&&isFinite(+o.data.money))return o}catch(e){}return null}
+async function doBackup(){
+  save();
+  const d=new Date(),p=n=>String(n).padStart(2,'0');
+  const name='album-zaloha-'+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'.json';
+  const txt=JSON.stringify({app:BAK_APP,v:1,date:d.toISOString(),data:ser()});
+  const blob=new Blob([txt],{type:'application/json'});
+  try{
+    const file=new File([blob],name,{type:'application/json'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});$('shop').classList.remove('on');flash('Záloha je hotová');return}
+  }catch(e){if(e&&e.name==='AbortError')return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
+  $('shop').classList.remove('on');flash('Záloha je stiahnutá');
+}
+$('resF').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{const o=readBackup(String(rd.result||''));if(o){restoreCand=o;shopNote=''}else{restoreCand=null;shopNote='Toto nie je záloha tejto hry.';SFX.err()}renderShop()};
+  rd.onerror=()=>{shopNote='Súbor sa nedá prečítať.';renderShop()};
+  rd.readAsText(f);
+});
 $('sL').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
+  if(b.id==='bak'){doBackup();return}
+  if(b.id==='res'){shopNote='';restoreCand=null;$('resF').click();return}
+  if(b.id==='resNo'){restoreCand=null;renderShop();return}
+  if(b.id==='resOk'){
+    const o=restoreCand;restoreCand=null;if(!o)return;
+    if(applySave(o.data)){belt=[];flyers=[];parts=[];cards=[];hideCard();P.x=P.tx=200;P.y=P.ty=330;P.act=null;P.dig=0;P.digM=-1;save();shownMoney=-1;refreshMoney();refreshHud();applySnd();$('bPlay').textContent='Pokračovať';$('shop').classList.remove('on');SFX.fan();flash('Postup je obnovený zo zálohy')}
+    return;
+  }
   if(b.id==='reset'){if(!resetArm){resetArm=true;renderShop();return}const snd=S.snd;S=fresh();S.snd=snd;belt=[];flyers=[];parts=[];P.x=P.tx=200;P.y=P.ty=330;P.act=null;save();refreshHud();shownMoney=-1;refreshMoney();$('shop').classList.remove('on');return}
   const u=UP.find(q=>q.k===b.dataset.k);const l=S.up[u.k];if(l>=3)return;const cost=u.cost[l];
   if(S.money<cost){SFX.err();return}
@@ -847,6 +891,8 @@ addEventListener('pagehide',()=>save());
 let last=performance.now();
 function loop(t){const dt=Math.min(.05,(t-last)/1000)*(window.__speed||1);last=t;if(started)update(dt);else gt+=dt;render();music();requestAnimationFrame(loop)}
 resize();drawStart();sndLabel();refreshMoney();refreshHud();$('start').classList.add('on');requestAnimationFrame(loop);
+/* ---------- offline režim ---------- */
+if('serviceWorker' in navigator&&location.protocol==='https:'){addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})})}
 if(TEST){window.__g={now,get S(){return S},P,FIGS,PAGES,MPOS,get belt(){return belt},buy,go,update,collect,save,skip(ms){skew+=ms},setMoney(v){S.money=v;refreshHud()},openAlbum,openShop,turn,toScreen(x,y){return{x:offX+x*scale,y:offY+y*scale}}}}
 }
 </script>
